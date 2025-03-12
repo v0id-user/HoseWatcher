@@ -1,5 +1,5 @@
-import { Account, Client } from "node-appwrite"; // Using the 'import' syntax
-
+import { Account, Client } from "node-appwrite";
+import { decodeAtProtoEvent } from "./atprotoDecode";
 
 export interface Env {
     BAAS_ENDPOINT: string;
@@ -41,7 +41,7 @@ export default {
 
             // Verify the token
             const token: string | undefined = request.headers.get('Authorization')?.split(' ')[1];
-            
+
             // Skip authentication if DEBUG is true
             if (env.DEBUG) {
                 console.log('Debug mode enabled, skipping authentication');
@@ -50,13 +50,13 @@ export default {
                 if (!token) {
                     return new Response('Unauthorized', { status: 401 });
                 }
-                
+
                 const client = new Client();
                 client.setEndpoint(env.BAAS_ENDPOINT)
                     .setProject(env.PROJECT_ID)
                     .setKey(env.APPWRITE_API_KEY);
                 client.setSession(token);
-                
+
                 const account = new Account(client);
                 const userAnonymous = await account.get();
                 if (userAnonymous.$id !== token) {
@@ -71,7 +71,7 @@ export default {
 
             // Connect to the bluesky firehose WebSocket stream
             const firehoseWebSocket = new WebSocket('wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos');
-            
+
             // Don't call accept() on the firehose WebSocket - it's outgoing, not incoming
             // firehoseWebSocket.accept(); - This line was causing the error
 
@@ -81,11 +81,43 @@ export default {
             });
 
             firehoseWebSocket.addEventListener('message', async (event) => {
+                /**
+                 * Shoutout to https://github.com/kcchu/atproto-firehose/blob/main/src/eventStream.ts#L44
+                 * and their implementation of the firehose, I took a lot of inspiration from it.
+                 * 
+                 * The data return from the firehose are specific to the ATProto, so we need to decode them.
+                 * 
+                 * As mentioned in the https://docs.bsky.app/docs/advanced-guides/firehose 
+                 * "you need to read off each message as it comes in, and decode the CBOR event data."
+                 * So we need to handle decoding of the messages with CBOR.
+                 * 
+                 * We can find more about CBOR in https://atproto.com/specs/data-model
+                 * "it is encoded in Concise Binary Object Representation (CBOR). CBOR is an IETF standard roughly based on JSON"
+                 * So the end result is a JSON object.
+                 * 
+                 * RFC for CBOR found in https://cbor.io/
+                 * and more implementation libraries found in https://cbor.io/impls.html
+                 * 
+                 * 
+                */
                 // Relay messages from the firehose WebSocket to the client
                 // TODO: Handle the filtering of the messages
                 // TODO: Serialize the messages to JSON
                 // TODO: Single message is 5KB, so we need to handle that
-                console.log('Received message from firehose:', event.data);
+
+                // Handle the message data correctly
+                let rawData;
+                if (typeof event.data === 'string') {
+                    // Convert string to ArrayBuffer if needed
+                    const encoder = new TextEncoder();
+                    rawData = encoder.encode(event.data).buffer;
+                } else {
+                    // Already an ArrayBuffer
+                    rawData = event.data;
+                }
+
+                // Decode the message
+                const decoded = decodeAtProtoEvent(new Uint8Array(rawData));
                 await serverWebSocket.send(event.data);
             });
 
