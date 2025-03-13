@@ -1,5 +1,13 @@
+/**
+ * This project idea originally saw it on https://www.youtube.com/watch?v=fxZSP85YcoE were
+ * someone perform the same thing with the twitter firehose, so I thought it would be a fun
+ * to replicate it with the bluesky firehose.
+ * 
+ * I'm not affiliated with the original project, I just thought it would be a fun challenge to
+ * replicate it.
+ */
 import { Account, Client } from "node-appwrite";
-import { decodeAtProtoEvent } from "./atprotoDecode";
+import { parseAtProtoEvent } from "./atprotoParser";
 
 export interface Env {
     BAAS_ENDPOINT: string;
@@ -100,7 +108,7 @@ export default {
                  * 
                  * 
                 */
-                // Relay messages from the firehose WebSocket to the client
+                // TODO: Relay messages from the firehose WebSocket to the client
                 // TODO: Handle the filtering of the messages
                 // TODO: Serialize the messages to JSON
                 // TODO: Single message is 5KB, so we need to handle that
@@ -116,9 +124,9 @@ export default {
                     rawData = event.data;
                 }
 
-                // Decode the message
-                const decoded = decodeAtProtoEvent(new Uint8Array(rawData));
-                await serverWebSocket.send(event.data);
+                // Parse the event to the common schema
+                const parsedEvent = parseAtProtoEvent(new Uint8Array(rawData));
+                await serverWebSocket.send(JSON.stringify(parsedEvent));
             });
 
             firehoseWebSocket.addEventListener('error', (error) => {
