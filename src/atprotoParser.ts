@@ -1,11 +1,17 @@
+// All imports
+import { type } from 'arktype'
+import * as cborx from 'cbor-x'
+import { CID } from 'multiformats/cid'
+import { COMMIT_EVENT_TYPE } from './constants/atprotoEventsTypes'
+import { AtProtoCommitEventBody } from './interfaces/atprotoEvents'
+import { CarReader } from '@ipld/car/reader'
+import { decode as ipldCborDecode } from '@ipld/dag-cbor'
+
 /* I copied the same decoder from the implementation of the Atproto decoder @atproto/common
 * found in https://github.dev/bluesky-social/atproto/blob/main/packages/common/src/index.ts
 * I tried to use the library @atproto/common but it was not working as expected with cloudflare workers
 * ==============@Atproto/common START==================
 */
-import { type } from 'arktype'
-import * as cborx from 'cbor-x'
-import { CID } from 'multiformats/cid'
 
 // add extension for decoding CIDs
 // decoding code taken from @ipld/dag-cbor
@@ -55,9 +61,9 @@ export const cborDecodeMulti = (encoded: Uint8Array): unknown[] => {
  * - https://atproto.com/specs/event-stream#Framing "Talking about the event frame and parts"
  */
 
-const atEvent = type({
-    operation: "'success' | 'error'",
-    event: "'#commit'"
+const atCommitEventParsed = type({
+  operation: "'success' | 'error'",
+  event: "'#commit'"
 })
 
 /**
@@ -68,65 +74,102 @@ const atEvent = type({
  * Details about data header and types can be found in:
  * - https://atproto.com/specs/sync
  */
-interface AtProtoEventHeader{
-    op: 1 | -1; // Operation 1 is a commit, -1 is an error
-    t?: '#commit'; // Type of the event, in this case it is a commit
+interface AtProtoEventHeader {
+  op: 1 | -1; // Operation 1 is a commit, -1 is an error
+  t?: "#commit" | "#account"; // Type of the event
 }
 
-interface AtProtoEventBody{
-  time: Date;
-  repo: string; // Repository name
-  seq: number; // Sequence number
-  ops: [{ // Operations
-    cid: string; // CID of the blob
-    path: string; // Path of the blob
-    action: 'create' | 'update' | 'delete'; // Action of the blob
-  }],
-  since: string;
-  blocks: Uint8Array;
-  commit: string;
-  tooBig: boolean;
-}
+async function parseAtProtoEvent(event: Uint8Array) {
+  console.log('Decoding event:', event);
 
-function parseAtProtoEvent(event: Uint8Array) {
-    console.log('Decoding event:', event);
-    const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, AtProtoEventBody];
-    
-    /**
-     * `op` ("operation", integer, required): fixed values, indicating what this frame contains
-     * 1: a regular message, with type indicated by `t`
-     * -1: an error message
-     * `t` ("type", string, optional): required if `op` is 1, indicating the Lexicon sub-type for this 
-     *                                 message, in short form. Does not include the full Lexicon identifier, 
-     *                                 just a fragment. Eg: #commit. Should not be included in header if op is -1.
-     */
-    
-    if (header.op === 1 && header.t) {
-        console.log('Decoded header:', header);
-        console.log('Decoded body ops:', body.ops);
-        console.log('Decoded body since:', body.since);
-        console.log('Decoded body blocks:', body.blocks);
-        console.log('Decoded body commit:', body.commit);
-        console.log('Decoded body tooBig:', body.tooBig);
-        console.log('Decoded body repo:', body.repo);
-        const decodedBlocks = cborx.decode(body.blocks);
-        console.log('Decoded blocks:', decodedBlocks);
-    }else if (header.op === -1) {
-      // I might not ignore this, by for sake of simplicity I will ignore it
-      console.log('Decoded error header:', header);
-    }else{
-      /* ignore unknown op or t values
-      * as stated in the spec:
-      * Clients should ignore frames with headers that have unknown op or t values. 
-      * Unknown fields in both headers and payloads should be ignored. Invalid framing or invalid DAG-CBOR 
-      * encoding are hard errors, and the client should drop the entire connection instead of skipping the frame. 
-      * Servers should ignore any frames received from the client, not treat them as errors.
+  const [header, body] = cborDecodeMulti(event) as [any, unknown]; // The type of the body is unknown until we read the event header
+
+  /**
+   * `op` ("operation", integer, required): fixed values, indicating what this frame contains
+   * 1: a regular message, with type indicated by `t`
+   * -1: an error message
+   * `t` ("type", string, optional): required if `op` is 1, indicating the Lexicon sub-type for this 
+   *                                 message, in short form. Does not include the full Lexicon identifier, 
+   *                                 just a fragment. Eg: #commit. Should not be included in header if op is -1.
+   */
+  console.log('RAW Decoded header:', header);
+  console.log('RAW Decoded body:', body);
+  if (header.op === 1 && header.t) {
+    if (header.t === COMMIT_EVENT_TYPE) {
+      const event = body as AtProtoCommitEventBody;
+
+      if (event.tooBig || event.ops[0].action === 'delete') {
+        // Ignore these type of events
+        return null;
+      }
+      
+      /* 
+      * Decoding the blocks taken from https://github.com/kcchu/atproto-firehose/blob/main/src/subscribeRepos.ts#L64
+      * and the specs in https://atproto.com/specs/sync
+      * 
+      * The block are encoded in CAR format, so we need to decode them
+      * 
+      * more about the CAR format can be found in:
+      * - https://ipld.io/specs/transport/car/carv1/#summary
+      * 
+      * Also you need to know about the CIDs because it relates to the blocks:
+      * - https://github.com/multiformats/cid
       */
+      console.log('Decoding blocks');
+      // First of all we need to check for the CID if it does exists
+      if (!event.ops[0].cid) {
+        console.log('Missing CID, path or action');
+        return null;
+      }
+      const cid = event.ops[0].cid;
+      const cr = await CarReader.fromBytes(event.blocks);
+      if (!cr) {
+        console.log('Error decoding the CAR');
+        return null;
+      }
 
-      return null;
+      // Log operation for getting the block from the CID
+      console.log('Getting block from CID');
+      // Get the block from the CID
+      const block = await cr.get(cid as any);
+      if (!block) {
+        console.log('Error getting the block');
+        return null;
+      }
+
+      // Log operation for decoding the block
+      console.log('Decoding the block');
+      // Decode the block
+      const decodedBlock = ipldCborDecode(block.bytes) as {$type: string;}; // inline just to extract the $type
+      // Log operation for successful decoding
+      console.log('Block decoded successfully ', decodedBlock);
+      /**
+       * Now we finished dealing with sync events and started dealing with
+       * Data models, each event has a $type maybe a like, reply, post, etc.
+       * 
+       * We need to check for the $type and then parse the event accordingly
+       */
+      const $type = decodedBlock.$type;
+      console.log('Decoded block $type:', $type);
+      return decodedBlock;
+
     }
+  } else if (header.op === -1) {
+    // I might not ignore this, by for sake of simplicity I will ignore it
+    console.log('Decoded error header:', header);
+  } else {
+    /* ignore unknown op or t values
+    * as stated in the spec:
+    * Clients should ignore frames with headers that have unknown op or t values. 
+    * Unknown fields in both headers and payloads should be ignored. Invalid framing or invalid DAG-CBOR 
+    * encoding are hard errors, and the client should drop the entire connection instead of skipping the frame. 
+    * Servers should ignore any frames received from the client, not treat them as errors.
+    */
 
-    return header;
+    return null;
+  }
+
+  return header;
 }
 
 export { parseAtProtoEvent }

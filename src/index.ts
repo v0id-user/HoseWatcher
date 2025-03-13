@@ -125,7 +125,7 @@ export default {
                 }
 
                 // Parse the event to the common schema
-                const parsedEvent = parseAtProtoEvent(new Uint8Array(rawData));
+                const parsedEvent = await parseAtProtoEvent(new Uint8Array(rawData));
                 await serverWebSocket.send(JSON.stringify(parsedEvent));
             });
 
