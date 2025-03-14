@@ -14,9 +14,16 @@ export interface Env {
     APPWRITE_API_KEY: string;
     PROJECT_ID: string;
     DEBUG: boolean;
+    HOSER_ENDPOINT: string;
 }
 
-const handleBanner = () => {
+const handleBanner = (env: Env) => {
+    const webSocketSchema = env.DEBUG === true ? 
+                                `ws://` : 'wss://'
+    const httpSchema = env.DEBUG === true ? 
+                                `http://` : 'https://'
+    const webSocketEndPoint = `${webSocketSchema}${env.HOSER_ENDPOINT}`;
+    const httpEndPoint = `${httpSchema}${env.HOSER_ENDPOINT}`;
     return new Response(`
         _   _              __        __    _       _               
        | | | | ___  ___  __\\ \\      / /_ _| |_ ___| |__   ___ _ __ 
@@ -24,10 +31,10 @@ const handleBanner = () => {
        |  _  | (_) \\__ \\  __/\\ V  V / (_| | || (__| | | |  __/ |   
        |_| |_|\\___/|___/\\___| \\_/\\_/ \\__,_|\\__\\___|_| |_|\\___|_|   
        
-       wss://fire.hose.watch/
+       ${webSocketEndPoint}/
 
        Must be authenticated to connect
-       visit https://hose.watch/ you will get a token automatically
+       visit ${httpEndPoint}/ you will get a token automatically
        ---
        
        Made with ❤️ by @v0id_user
@@ -126,7 +133,9 @@ export default {
 
                 // Parse the event to the common schema
                 const parsedEvent = await parseAtProtoEvent(new Uint8Array(rawData));
-                await serverWebSocket.send(JSON.stringify(parsedEvent));
+                if (parsedEvent) {
+                    await serverWebSocket.send(JSON.stringify(parsedEvent));
+                }
             });
 
             firehoseWebSocket.addEventListener('error', (error) => {
@@ -161,6 +170,6 @@ export default {
             });
         }
 
-        return handleBanner();
+        return handleBanner(env);
     },
 } satisfies ExportedHandler<Env>;

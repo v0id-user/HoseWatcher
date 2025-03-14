@@ -1,7 +1,7 @@
-const follow = 'app.bsky.graph.follow';
-const like = 'app.bsky.feed.like';
-const post = 'app.bsky.feed.post';
-const reply = 'app.bsky.feed.post.reply';
-const repost = 'app.bsky.feed.post.repost';
-const quote = 'app.bsky.feed.post.quote';
+export const BSKY_FOLLOW = 'app.bsky.graph.follow';
+export const BSKY_LIKE = 'app.bsky.feed.like';
+export const BSKY_POST = 'app.bsky.feed.post';
+export const BSKY_REPLY = 'app.bsky.feed.post.reply';
+export const BSKY_REPOST = 'app.bsky.feed.post.repost';
+export const BSKY_QUOTE = 'app.bsky.feed.post.quote';
 

@@ -3,9 +3,17 @@ import { type } from 'arktype'
 import * as cborx from 'cbor-x'
 import { CID } from 'multiformats/cid'
 import { COMMIT_EVENT_TYPE } from './constants/atprotoEventsTypes'
+import { BSKY_POST } from './constants/dataModelTypes'
 import { AtProtoCommitEventBody } from './interfaces/atprotoEvents'
 import { CarReader } from '@ipld/car/reader'
 import { decode as ipldCborDecode } from '@ipld/dag-cbor'
+import { AtpAgent } from '@atproto/api'
+
+// ====== Public declarations ======
+const agent = new AtpAgent({
+  service: 'https://bsky.social'
+})
+// TODO: use await agent.getPost(params)
 
 /* I copied the same decoder from the implementation of the Atproto decoder @atproto/common
 * found in https://github.dev/bluesky-social/atproto/blob/main/packages/common/src/index.ts
@@ -61,7 +69,7 @@ export const cborDecodeMulti = (encoded: Uint8Array): unknown[] => {
  * - https://atproto.com/specs/event-stream#Framing "Talking about the event frame and parts"
  */
 
-const atCommitEventParsed = type({
+const atHeaderType = type({
   operation: "'success' | 'error'",
   event: "'#commit'"
 })
@@ -82,7 +90,7 @@ interface AtProtoEventHeader {
 async function parseAtProtoEvent(event: Uint8Array) {
   console.log('Decoding event:', event);
 
-  const [header, body] = cborDecodeMulti(event) as [any, unknown]; // The type of the body is unknown until we read the event header
+  const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, unknown]; // The type of the body is unknown until we read the event header
 
   /**
    * `op` ("operation", integer, required): fixed values, indicating what this frame contains
@@ -102,7 +110,7 @@ async function parseAtProtoEvent(event: Uint8Array) {
         // Ignore these type of events
         return null;
       }
-      
+
       /* 
       * Decoding the blocks taken from https://github.com/kcchu/atproto-firehose/blob/main/src/subscribeRepos.ts#L64
       * and the specs in https://atproto.com/specs/sync
@@ -140,7 +148,7 @@ async function parseAtProtoEvent(event: Uint8Array) {
       // Log operation for decoding the block
       console.log('Decoding the block');
       // Decode the block
-      const decodedBlock = ipldCborDecode(block.bytes) as {$type: string;}; // inline just to extract the $type
+      const decodedBlock = ipldCborDecode(block.bytes) as { $type: string; }; // inline just to extract the $type
       // Log operation for successful decoding
       console.log('Block decoded successfully ', decodedBlock);
       /**
@@ -151,7 +159,36 @@ async function parseAtProtoEvent(event: Uint8Array) {
        */
       const $type = decodedBlock.$type;
       console.log('Decoded block $type:', $type);
-      return decodedBlock;
+      switch ($type) {
+        case BSKY_POST:
+          /**
+           * For posts we want to get the author and more data so we will use @atproto/api
+           * for sake of simplicity.
+           * 
+           * We will use .getPost(params) to get the post data.
+           * 
+           * We need to parse the URI to extract the repo and rkey
+           *
+           * URI Schema: 
+           * at://" AUTHORITY [ PATH ] [ "?" QUERY ] [ "#" FRAGMENT ]
+           * 
+           * Resource: https://atproto.com/specs/at-uri-scheme
+           */
+          
+          //TODO:find a way to get the author
+          const query = {
+            repo: event.repo,
+            rkey: event.rev
+          }
+          console.log('Querying post', query);
+          console.log('Decoded post', decodedBlock);
+          const post = await agent.getPost(query);
+          console.log('Post:', post);
+          return post;
+        default:
+          console.log('Not supported event type', $type);
+          return null;
+      }
 
     }
   } else if (header.op === -1) {

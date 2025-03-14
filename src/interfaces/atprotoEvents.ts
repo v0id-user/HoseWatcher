@@ -1,6 +1,7 @@
 interface AtProtoCommitEventBody {
   time: Date;
-  repo: string; // Repository name
+  repo: string; // Repository name 
+  rev: string; // Revision of the commit
   seq: number; // Sequence number
   ops: [{ // Operations
     cid: string; // CID of the blob
