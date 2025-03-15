@@ -88,6 +88,7 @@ interface AtProtoEventHeader {
 }
 
 async function parseAtProtoEvent(event: Uint8Array) {
+
   console.log('Decoding event:', event);
 
   const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, unknown]; // The type of the body is unknown until we read the event header
@@ -106,6 +107,8 @@ async function parseAtProtoEvent(event: Uint8Array) {
     if (header.t === COMMIT_EVENT_TYPE) {
       const event = body as AtProtoCommitEventBody;
 
+      // Actions could be, delete, create and update
+      // we are interested in create and update
       if (event.tooBig || event.ops[0].action === 'delete') {
         // Ignore these type of events
         return null;
@@ -167,12 +170,25 @@ async function parseAtProtoEvent(event: Uint8Array) {
            * 
            * We will use .getPost(params) to get the post data.
            * 
-           * We need to parse the URI to extract the repo and rkey
+           * It requires a repo and a rkey.
+           * 
+           * These values can be found in the orginal event data or extracted from the URI.
            *
            * URI Schema: 
            * at://" AUTHORITY [ PATH ] [ "?" QUERY ] [ "#" FRAGMENT ]
            * 
-           * Resource: https://atproto.com/specs/at-uri-scheme
+           * - https://atproto.com/specs/at-uri-scheme
+           * 
+           * Author is the authority part of the URI, which is a did:plc Decentralized Identifier:Public Ledger of Credentials,
+           * As mentioned in the spec:
+           * - https://atproto.com/specs/did
+           * - https://www.w3.org/TR/did-1.0/
+           * - https://web.plc.directory/
+           * 
+           * We need to do a resolution for the did:plc to get the web handle for it.
+           * 
+           * I will use the https://plc.directory/{did} API to do the resolution.
+           * 
            */
           
           //TODO:find a way to get the author

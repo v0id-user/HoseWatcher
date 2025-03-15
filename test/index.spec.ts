@@ -1,25 +1,35 @@
-// test/index.spec.ts
-import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
 import { describe, it, expect } from 'vitest';
-import worker from '../src/index';
+import { AtpAgent } from '@atproto/api'
+import { didResolve } from '../src/lib/didResolve';
 
-// For now, you'll need to do something like this to get a correctly-typed
-// `Request` to pass to `worker.fetch()`.
-const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
+// ====== Public declarations ======
+const agent = new AtpAgent({
+  service: 'https://bsky.social',
+})
 
-describe('Hello World worker', () => {
-	it('responds with Hello World! (unit style)', async () => {
-		const request = new IncomingRequest('http://example.com');
-		// Create an empty context to pass to `worker.fetch()`.
-		const ctx = createExecutionContext();
-		const response = await worker.fetch(request, env, ctx);
-		// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
-		await waitOnExecutionContext(ctx);
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
-
-	it('responds with Hello World! (integration style)', async () => {
-		const response = await SELF.fetch('https://example.com');
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
+describe('General tests', () => {
+    it('Testing bluesky api', async () => {
+        const query = {
+            repo: 'did:plc:mmcsgmxut473ffmsn2ziszrd',
+            rkey: '3lkev4vtwms24'
+        }
+        
+        try {
+            console.log('Querying post', query);
+            const post = await agent.getPost(query);
+            console.log('Post:', post);
+            console.log('Resolving handle', query.repo);
+            const didResolution = await didResolve('did:plc:e3ftuosewor75lyaej44fsbn'); // v0id.me || my account on bluesky
+            console.log('Resolved handle:', didResolution);
+            const handleResolution = await agent.resolveHandle({
+                handle: 'v0id.me'
+            });
+            console.log('Resolved handle:', handleResolution);
+            expect(post).toBeDefined();
+            return post;
+        } catch (error) {
+            console.error('Error:', error);
+            throw error;
+        }
+    })
 });

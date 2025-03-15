@@ -18,9 +18,9 @@ export interface Env {
 }
 
 const handleBanner = (env: Env) => {
-    const webSocketSchema = env.DEBUG === true ? 
+    const webSocketSchema = env.DEBUG ? 
                                 `ws://` : 'wss://'
-    const httpSchema = env.DEBUG === true ? 
+    const httpSchema = env.DEBUG ? 
                                 `http://` : 'https://'
     const webSocketEndPoint = `${webSocketSchema}${env.HOSER_ENDPOINT}`;
     const httpEndPoint = `${httpSchema}${env.HOSER_ENDPOINT}`;
