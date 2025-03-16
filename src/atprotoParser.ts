@@ -83,8 +83,7 @@ interface AtProtoEventHeader {
 }
 
 async function parseAtProtoEvent(event: Uint8Array) {
-
-  const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, unknown]; // The type of the body is unknown until we read the event header
+  const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, unknown];
 
   /**
    * `op` ("operation", integer, required): fixed values, indicating what this frame contains
@@ -94,141 +93,15 @@ async function parseAtProtoEvent(event: Uint8Array) {
    *                                 message, in short form. Does not include the full Lexicon identifier, 
    *                                 just a fragment. Eg: #commit. Should not be included in header if op is -1.
    */
-  if (header.op === 1 && header.t) {
-    if (header.t === COMMIT_EVENT_TYPE) {
-      const event = body as AtProtoCommitEventBody;
 
-      // Actions could be, delete, create and update
-      // we are interested in create and update
-      if (event.tooBig || event.ops[0].action === 'delete') {
-        // Ignore these type of events
-        return null;
-      }
-
-      /* 
-      * Decoding the blocks taken from https://github.com/kcchu/atproto-firehose/blob/main/src/subscribeRepos.ts#L64
-      * and the specs in https://atproto.com/specs/sync
-      * 
-      * The block are encoded in CAR format, so we need to decode them
-      * 
-      * more about the CAR format can be found in:
-      * - https://ipld.io/specs/transport/car/carv1/#summary
-      * 
-      * Also you need to know about the CIDs because it relates to the blocks:
-      * - https://github.com/multiformats/cid
-      */
-      ('Decoding blocks');
-      // First of all we need to check for the CID if it does exists
-      if (!event.ops[0].cid) {
-        ('Missing CID, path or action');
-        return null;
-      }
-      const cid = event.ops[0].cid;
-      const cr = await CarReader.fromBytes(event.blocks);
-      if (!cr) {
-        ('Error decoding the CAR');
-        return null;
-      }
-
-      // Log operation for getting the block from the CID
-      ('Getting block from CID');
-      // Get the block from the CID
-      const block = await cr.get(cid as any);
-      if (!block) {
-        ('Error getting the block');
-        return null;
-      }
-
-      // Log operation for decoding the block
-      ('Decoding the block');
-      // Decode the block
-      const decodedBlock = ipldCborDecode(block.bytes); // inline just to extract the $type
-      const blockType = decodedBlock as { $type: string; };
-      // Log operation for successful decoding
-      /**
-       * Now we finished dealing with sync events and started dealing with
-       * Data models, each event has a $type maybe a like, reply, post, etc.
-       * 
-       * We need to check for the $type and then parse the event accordingly
-       */
-      const $type = blockType.$type;
-      switch ($type) {
-        case BSKY_POST:
-          /**
-           * For posts we want to get the author and more data so we will use @atproto/api
-           * for sake of simplicity.
-           * 
-           * We will use .getPost(params) to get the post data.
-           * 
-           * It requires a repo and a rkey.
-           * 
-           * These values can be found in the orginal event data or extracted from the URI.
-           *
-           * URI Schema: 
-           * at://" AUTHORITY [ PATH ] [ "?" QUERY ] [ "#" FRAGMENT ]
-           * 
-           * - https://atproto.com/specs/at-uri-scheme
-           * 
-           * Author is the authority part of the URI, which is a did:plc Decentralized Identifier:Public Ledger of Credentials,
-           * As mentioned in the spec:
-           * - https://atproto.com/specs/did
-           * - https://www.w3.org/TR/did-1.0/
-           * - https://web.plc.directory/
-           * 
-           * We need to do a resolution for the did:plc to get the web handle for it.
-           * 
-           * I will use the https://plc.directory/{did} API to do the resolution.
-           * 
-           */
-
-          /*
-          * ! Change: 
-          * We will return a parsed raw sync event the client is responsible for extracting the data
-          * or any other details needed, the reason is that if we do it here we will need to make multiple
-          * requests to other services to get the data, and it will increase the complexity of the code and latency.
-          * 
-          * Also we will face rate limiting issues, so it's better to let the client handle the data.
-          * and we provide wrapper endpoints to other needed data.
-          * 
-          * 
-          */
-          const postModel = decodedBlock as PostEventDataModel;
-          console.log('Post model:', postModel);
-          const hoseData: HoseDataPost = {
-            text: postModel.text,
-            createdAt: postModel.createdAt,
-            reply: postModel.reply ? {
-              parent: {
-                uri: postModel.reply.parent.uri
-              }
-            } : undefined,
-            tags: postModel.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#tag'))
-              .map(f => f.features.find(feat => feat.tag)?.tag) as string[],
-            mentions: postModel.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#mention'))
-              .map(f => f.features.find(feat => feat.did)?.did) as string[]
-          };
-          console.log('Hose data:', hoseData);
-          if (hoseData.text === "") {
-            return {};
-          }
-          return hoseData;
-        // const query = {
-        //   repo: event.repo,
-        //   rkey: event.rev
-        // }
-        //  ('Querying post', query);
-        //  ('Decoded post', decodedBlock);
-        // const post = await agent.getPost(query);
-        //  ('Post:', post);
-        // return post;
-        default:
-          return null;
-      }
-
-    }
-  } else if (header.op === -1) {
+  // Handle error messages
+  if (header.op === -1) {
     // I might not ignore this, by for sake of simplicity I will ignore it
-  } else {
+    return null;
+  }
+
+  // Handle unknown op/t values
+  if (!header.op || !header.t) {
     /* ignore unknown op or t values
     * as stated in the spec:
     * Clients should ignore frames with headers that have unknown op or t values. 
@@ -236,11 +109,132 @@ async function parseAtProtoEvent(event: Uint8Array) {
     * encoding are hard errors, and the client should drop the entire connection instead of skipping the frame. 
     * Servers should ignore any frames received from the client, not treat them as errors.
     */
-
     return null;
   }
 
-  return header;
+  // Handle non-commit events
+  if (header.t !== COMMIT_EVENT_TYPE) {
+    return header;
+  }
+
+  const hoseEvent = body as AtProtoCommitEventBody;
+
+  // Skip too big or deleted events
+  if (hoseEvent.tooBig || hoseEvent.ops[0].action === 'delete') {
+    return null;
+  }
+
+  /* 
+  * Decoding the blocks taken from https://github.com/kcchu/atproto-firehose/blob/main/src/subscribeRepos.ts#L64
+  * and the specs in https://atproto.com/specs/sync
+  * 
+  * The block are encoded in CAR format, so we need to decode them
+  * 
+  * more about the CAR format can be found in:
+  * - https://ipld.io/specs/transport/car/carv1/#summary
+  * 
+  * Also you need to know about the CIDs because it relates to the blocks:
+  * - https://github.com/multiformats/cid
+  */
+
+  // Validate CID exists
+  if (!hoseEvent.ops[0].cid) {
+    ('Missing CID, path or action');
+    return null;
+  }
+
+  // Decode CAR format
+  ('Decoding blocks');
+  const cr = await CarReader.fromBytes(hoseEvent.blocks);
+  if (!cr) {
+    ('Error decoding the CAR');
+    return null;
+  }
+
+  // Get block from CID
+  ('Getting block from CID');
+  const block = await cr.get(hoseEvent.ops[0].cid as any);
+  if (!block) {
+    ('Error getting the block');
+    return null;
+  }
+
+  // Decode block
+  ('Decoding the block');
+  const decodedBlock = ipldCborDecode(block.bytes);
+  const blockType = decodedBlock as { $type: string; };
+
+  /**
+   * Now we finished dealing with sync events and started dealing with
+   * Data models, each event has a $type maybe a like, reply, post, etc.
+   * 
+   * We need to check for the $type and then parse the event accordingly
+   */
+  if (blockType.$type !== BSKY_POST) {
+    return null;
+  }
+
+  /**
+   * For posts we want to get the author and more data so we will use @atproto/api
+   * for sake of simplicity.
+   * 
+   * We will use .getPost(params) to get the post data.
+   * 
+   * It requires a repo and a rkey.
+   * 
+   * These values can be found in the orginal event data or extracted from the URI.
+   *
+   * URI Schema: 
+   * at://" AUTHORITY [ PATH ] [ "?" QUERY ] [ "#" FRAGMENT ]
+   * 
+   * - https://atproto.com/specs/at-uri-scheme
+   * 
+   * Author is the authority part of the URI, which is a did:plc Decentralized Identifier:Public Ledger of Credentials,
+   * As mentioned in the spec:
+   * - https://atproto.com/specs/did
+   * - https://www.w3.org/TR/did-1.0/
+   * - https://web.plc.directory/
+   * 
+   * We need to do a resolution for the did:plc to get the web handle for it.
+   * 
+   * I will use the https://plc.directory/{did} API to do the resolution.
+   * 
+   */
+
+  /*
+  * ! Change: 
+  * We will return a parsed raw sync event the client is responsible for extracting the data
+  * or any other details needed, the reason is that if we do it here we will need to make multiple
+  * requests to other services to get the data, and it will increase the complexity of the code and latency.
+  * 
+  * Also we will face rate limiting issues, so it's better to let the client handle the data.
+  * and we provide wrapper endpoints to other needed data.
+  * 
+  */
+  const postModel = decodedBlock as PostEventDataModel;
+  console.log('Post model:', postModel);
+
+  const hoseData: HoseDataPost = {
+    text: postModel.text,
+    createdAt: postModel.createdAt,
+    reply: postModel.reply ? {
+      parent: {
+        uri: postModel.reply.parent.uri
+      }
+    } : undefined,
+    tags: postModel.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#tag'))
+      .map(f => f.features.find(feat => feat.tag)?.tag) as string[],
+    mentions: postModel.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#mention'))
+      .map(f => f.features.find(feat => feat.did)?.did) as string[]
+  };
+
+  console.log('Hose data:', hoseData);
+
+  if (hoseData.text === "") {
+    return {};
+  }
+
+  return hoseData;
 }
 
 export { parseAtProtoEvent }
