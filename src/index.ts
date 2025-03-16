@@ -42,11 +42,18 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         return;
     }
 
-    // TODO: Make this configurable
-    const maxMessages = 15;
-
-    let messageCount = 0;
-    let lastResetTime = Date.now();
+    // Store rate limiting state in WebSocket object
+    const state = {
+        // TODO: Make this configurable
+        messageCount: 0,
+        lastResetTime: Date.now(),
+        maxMessages: 15,
+        resetInterval: 5000
+    };
+    
+    // Attach state to WebSocket instance
+    // Hacky serverless workaround, I'm not sure if this is the best way to do this.
+    (serverWebSocket as any).rateLimit = state;
 
     // Create firehose connection
     const firehoseWebSocket = new WebSocket('wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos');
@@ -81,26 +88,18 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         }
 
         const currentTime = Date.now();
-        // TODO: Make this configurable
-        if (currentTime - lastResetTime >= 10000) {
-            messageCount = 0;
-            lastResetTime = currentTime;
+        const rateLimitState = (serverWebSocket as any).rateLimit;
+
+        if (currentTime - rateLimitState.lastResetTime >= rateLimitState.resetInterval) {
+            rateLimitState.messageCount = 0;
+            rateLimitState.lastResetTime = currentTime;
         }
 
-        if (messageCount >= maxMessages) {
-            // TODO: Make this configurable
-            const timeUntilReset = 2000 - (currentTime - lastResetTime);
-            if (timeUntilReset > 0) {
-                // Halt the execution for the amount of time until the reset
-                await new Promise(resolve => setTimeout(resolve, timeUntilReset));
-            }
-            messageCount = 0;
-            lastResetTime = Date.now();
+        if (rateLimitState.messageCount >= rateLimitState.maxMessages) {
+            return;
         }
 
         try {
-            const startTime = performance.now();
-
             const rawData = typeof fireHoseevent.data === 'string'
                 ? new TextEncoder().encode(fireHoseevent.data) 
                 : new Uint8Array(fireHoseevent.data);
@@ -109,11 +108,8 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
             
             if (parsedEvent && Object.keys(parsedEvent).length > 0) {
                 await serverWebSocket.send(JSON.stringify(parsedEvent));
-                messageCount++;
+                rateLimitState.messageCount++;
             }
-
-            const endTime = performance.now();
-            console.debug(`Event processing took ${endTime - startTime}ms`);
         } catch (err) {
             console.error('Error processing event:', err);
         }
