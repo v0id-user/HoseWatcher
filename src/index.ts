@@ -17,7 +17,7 @@ const handleBanner = (request: Request, env: Env): Response => {
     const httpSchema = env.DEBUG ?
         `http://` : 'https://'
     const webSocketEndPoint = `${webSocketSchema}${env.HOSER_ENDPOINT}`;
-    const httpEndPoint = `${httpSchema}${env.HOSER_ENDPOINT}`;
+
     return new Response(`
         _   _              __        __    _       _               
        | | | | ___  ___  __\\ \\      / /_ _| |_ ___| |__   ___ _ __ 
@@ -37,6 +37,11 @@ const handleBanner = (request: Request, env: Env): Response => {
 }
 
 const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, request: Request) => {
+    const host = request.headers.get('host');
+    if (!host?.startsWith('fire')) {
+        serverWebSocket.close();
+        return;
+    }
     serverWebSocket.accept();
 
     // Create firehose connection
@@ -68,10 +73,7 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
          * 
         */
 
-        // TODO: Relay messages from the firehose WebSocket to the client
-        // TODO: Handle the filtering of the messages
-        // TODO: Serialize the messages to JSON
-        // TODO: Single message is 5KB, so we need to handle that
+        
 
         // Handle the message data correctly
         let rawData;
