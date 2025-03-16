@@ -117,30 +117,30 @@ async function parseAtProtoEvent(event: Uint8Array) {
       * Also you need to know about the CIDs because it relates to the blocks:
       * - https://github.com/multiformats/cid
       */
-       ('Decoding blocks');
+      ('Decoding blocks');
       // First of all we need to check for the CID if it does exists
       if (!event.ops[0].cid) {
-         ('Missing CID, path or action');
+        ('Missing CID, path or action');
         return null;
       }
       const cid = event.ops[0].cid;
       const cr = await CarReader.fromBytes(event.blocks);
       if (!cr) {
-         ('Error decoding the CAR');
+        ('Error decoding the CAR');
         return null;
       }
 
       // Log operation for getting the block from the CID
-       ('Getting block from CID');
+      ('Getting block from CID');
       // Get the block from the CID
       const block = await cr.get(cid as any);
       if (!block) {
-         ('Error getting the block');
+        ('Error getting the block');
         return null;
       }
 
       // Log operation for decoding the block
-       ('Decoding the block');
+      ('Decoding the block');
       // Decode the block
       const decodedBlock = ipldCborDecode(block.bytes); // inline just to extract the $type
       const blockType = decodedBlock as { $type: string; };
