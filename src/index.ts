@@ -42,19 +42,6 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         return;
     }
 
-    // Store rate limiting state in WebSocket object
-    const state = {
-        // TODO: Make this configurable
-        messageCount: 0,
-        lastResetTime: Date.now(),
-        maxMessages: 15,
-        resetInterval: 2000
-    };
-    
-    // Attach state to WebSocket instance
-    // Hacky serverless workaround, I'm not sure if this is the best way to do this.
-    (serverWebSocket as any).rateLimit = state;
-
     // Create firehose connection
     const firehoseWebSocket = new WebSocket('wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos');
 
@@ -88,22 +75,6 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         }
 
         const currentTime = Date.now();
-        const rateLimitState = (serverWebSocket as any).rateLimit;
-
-        if (currentTime - rateLimitState.lastResetTime >= rateLimitState.resetInterval) {
-            rateLimitState.messageCount = 0;
-            rateLimitState.lastResetTime = currentTime;
-        }
-
-        if (rateLimitState.messageCount >= rateLimitState.maxMessages) {
-            const timeUntilReset = rateLimitState.resetInterval - (currentTime - rateLimitState.lastResetTime);
-            if (timeUntilReset > 0) {
-                await new Promise(resolve => setTimeout(resolve, timeUntilReset));
-            }
-            rateLimitState.messageCount = 0;
-            rateLimitState.lastResetTime = Date.now();
-            return;
-        }
 
         try {
             const rawData = typeof fireHoseevent.data === 'string'
@@ -114,7 +85,6 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
             
             if (parsedEvent && Object.keys(parsedEvent).length > 0) {
                 await serverWebSocket.send(JSON.stringify(parsedEvent));
-                rateLimitState.messageCount++;
             }
         } catch (err) {
             console.error('Error processing event:', err);
