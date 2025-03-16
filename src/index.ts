@@ -8,20 +8,15 @@
  */
 import { Account, Client } from "node-appwrite";
 import { parseAtProtoEvent } from "./atprotoParser";
+import { HttpHandler } from "./lib/httpHandler";
+import Env from "./interfaces/envVars";
+import { WebSocketHandler } from "./lib/wsHandler";
 
-export interface Env {
-    BAAS_ENDPOINT: string;
-    APPWRITE_API_KEY: string;
-    PROJECT_ID: string;
-    DEBUG: boolean;
-    HOSER_ENDPOINT: string;
-}
-
-const handleBanner = (env: Env) => {
-    const webSocketSchema = env.DEBUG ? 
-                                `ws://` : 'wss://'
-    const httpSchema = env.DEBUG ? 
-                                `http://` : 'https://'
+const handleBanner = (request: Request, env: Env): Response => {
+    const webSocketSchema = env.DEBUG ?
+        `ws://` : 'wss://'
+    const httpSchema = env.DEBUG ?
+        `http://` : 'https://'
     const webSocketEndPoint = `${webSocketSchema}${env.HOSER_ENDPOINT}`;
     const httpEndPoint = `${httpSchema}${env.HOSER_ENDPOINT}`;
     return new Response(`
@@ -46,9 +41,12 @@ const handleBanner = (env: Env) => {
 
 export default {
     async fetch(request, env, ctx): Promise<Response> {
-        const url = new URL(request.url)
+        const wsHandler = new WebSocketHandler(env);
+        // TODO: Make this works some how
+        wsHandler.addRoute('/', async (env, serverWebSocket, request) => {
+            // Accept the connection
+            serverWebSocket.accept();
 
-        if (url.pathname === '/' && request.headers.get('Upgrade') === 'websocket') {
             /**
             * The authentication is handled by the client using the Appwrite SDK, 
             * so we just need to verify the token
@@ -63,7 +61,8 @@ export default {
             } else {
                 // Only authenticate if not in debug mode
                 if (!token) {
-                    return new Response('Unauthorized', { status: 401 });
+                    serverWebSocket.close(1008, 'Unauthorized');
+                    return;
                 }
 
                 const client = new Client();
@@ -75,27 +74,20 @@ export default {
                 const account = new Account(client);
                 const userAnonymous = await account.get();
                 if (userAnonymous.$id !== token) {
-                    return new Response('Unauthorized', { status: 401 });
+                    serverWebSocket.close(1008, 'Unauthorized');
+                    return;
                 }
             }
 
-            // Accept WebSocket connection from client
-            const pair = new WebSocketPair();
-            const [clientWebSocket, serverWebSocket] = [pair[0], pair[1]];
-            serverWebSocket.accept(); // Accept the WebSocket connection
-
-            // Connect to the bluesky firehose WebSocket stream
+            // Create firehose connection
             const firehoseWebSocket = new WebSocket('wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos');
-
-            // Don't call accept() on the firehose WebSocket - it's outgoing, not incoming
-            // firehoseWebSocket.accept(); - This line was causing the error
 
             // Set up event listeners for the firehose WebSocket
             firehoseWebSocket.addEventListener('open', () => {
                 console.log('Connected to the firehose WebSocket');
             });
 
-            firehoseWebSocket.addEventListener('message', async (event) => {
+            firehoseWebSocket.addEventListener('message', async (fireHoseevent) => {
                 /**
                  * Shoutout to https://github.com/kcchu/atproto-firehose/blob/main/src/eventStream.ts#L44
                  * and their implementation of the firehose, I took a lot of inspiration from it.
@@ -115,6 +107,7 @@ export default {
                  * 
                  * 
                 */
+
                 // TODO: Relay messages from the firehose WebSocket to the client
                 // TODO: Handle the filtering of the messages
                 // TODO: Serialize the messages to JSON
@@ -122,13 +115,13 @@ export default {
 
                 // Handle the message data correctly
                 let rawData;
-                if (typeof event.data === 'string') {
+                if (typeof fireHoseevent.data === 'string') {
                     // Convert string to ArrayBuffer if needed
                     const encoder = new TextEncoder();
-                    rawData = encoder.encode(event.data).buffer;
+                    rawData = encoder.encode(fireHoseevent.data).buffer;
                 } else {
                     // Already an ArrayBuffer
-                    rawData = event.data;
+                    rawData = fireHoseevent.data;
                 }
 
                 // Parse the event to the common schema
@@ -148,28 +141,14 @@ export default {
                 console.log('Disconnected from the firehose WebSocket');
                 serverWebSocket.close();
             });
+        });
 
-            // Set up event listeners for the client WebSocket
-            serverWebSocket.addEventListener('message', async (event) => {
-                // Forward any messages from the client to the firehose if needed
-                console.log('Received message from client:', event.data);
-            });
 
-            serverWebSocket.addEventListener('close', () => {
-                console.log('Client disconnected');
-                firehoseWebSocket.close();
-            });
+        const version = 'v1'
+        const httpHandler = new HttpHandler(env);
+        httpHandler.addRoute('/', handleBanner);
 
-            return new Response(null, {
-                status: 101,
-                headers: {
-                    'Upgrade': 'websocket',
-                    'Connection': 'Upgrade'
-                },
-                webSocket: clientWebSocket,
-            });
-        }
-
-        return handleBanner(env);
+        // Very bad, but it works :P
+        return Promise.race([httpHandler.handle(request), wsHandler.handle(request)]);
     },
 } satisfies ExportedHandler<Env>;

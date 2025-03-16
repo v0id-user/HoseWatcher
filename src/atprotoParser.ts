@@ -1,5 +1,4 @@
 // All imports
-import { type } from 'arktype'
 import * as cborx from 'cbor-x'
 import { CID } from 'multiformats/cid'
 import { COMMIT_EVENT_TYPE } from './constants/atprotoEventsTypes'
@@ -62,17 +61,12 @@ export const cborDecodeMulti = (encoded: Uint8Array): unknown[] => {
  * In this parser I will try to simplify the event data and extract
  * the most useful information from it.
  * 
- * I will use the arktype library to define the schema of the event data
  * 
  * Resources can be found in:
  * 
  * - https://atproto.com/specs/event-stream#Framing "Talking about the event frame and parts"
  */
 
-const atHeaderType = type({
-  operation: "'success' | 'error'",
-  event: "'#commit'"
-})
 
 /**
  * Header of the event
@@ -190,17 +184,28 @@ async function parseAtProtoEvent(event: Uint8Array) {
            * I will use the https://plc.directory/{did} API to do the resolution.
            * 
            */
-          
-          //TODO:find a way to get the author
-          const query = {
-            repo: event.repo,
-            rkey: event.rev
-          }
-          console.log('Querying post', query);
-          console.log('Decoded post', decodedBlock);
-          const post = await agent.getPost(query);
-          console.log('Post:', post);
-          return post;
+
+          /*
+          * ! Change: 
+          * We will return a parsed raw sync event the client is responsible for extracting the data
+          * or any other details needed, the reason is that if we do it here we will need to make multiple
+          * requests to other services to get the data, and it will increase the complexity of the code and latency.
+          * 
+          * Also we will face rate limiting issues, so it's better to let the client handle the data.
+          * and we provide wrapper endpoints to other needed data.
+          * 
+          * 
+          */
+          return event;
+          // const query = {
+          //   repo: event.repo,
+          //   rkey: event.rev
+          // }
+          // console.log('Querying post', query);
+          // console.log('Decoded post', decodedBlock);
+          // const post = await agent.getPost(query);
+          // console.log('Post:', post);
+          // return post;
         default:
           console.log('Not supported event type', $type);
           return null;

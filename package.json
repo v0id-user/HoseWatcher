@@ -21,7 +21,6 @@
 		"@atproto/api": "^0.14.9",
 		"@atproto/lexicon": "^0.4.8",
 		"@ipld/car": "^5.4.0",
-		"arktype": "^2.1.9",
 		"cbor-x": "^1.6.0",
 		"multiformats": "^13.3.2",
 		"node-appwrite": "^15.0.0"
