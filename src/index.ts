@@ -37,13 +37,14 @@ const handleBanner = (request: Request, env: Env): Response => {
 }
 
 const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, request: Request) => {
+    serverWebSocket.accept();
+
     const host = request.headers.get('host');
+
     if (!host?.startsWith('fire')) {
         serverWebSocket.close();
         return;
     }
-    serverWebSocket.accept();
-
     // Create firehose connection
     const firehoseWebSocket = new WebSocket('wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos');
 
