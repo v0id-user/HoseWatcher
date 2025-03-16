@@ -48,7 +48,7 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         messageCount: 0,
         lastResetTime: Date.now(),
         maxMessages: 15,
-        resetInterval: 5000
+        resetInterval: 1000
     };
     
     // Attach state to WebSocket instance
