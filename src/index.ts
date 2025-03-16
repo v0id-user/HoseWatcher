@@ -96,6 +96,12 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         }
 
         if (rateLimitState.messageCount >= rateLimitState.maxMessages) {
+            const timeUntilReset = rateLimitState.resetInterval - (currentTime - rateLimitState.lastResetTime);
+            if (timeUntilReset > 0) {
+                await new Promise(resolve => setTimeout(resolve, timeUntilReset));
+            }
+            rateLimitState.messageCount = 0;
+            rateLimitState.lastResetTime = Date.now();
             return;
         }
 
