@@ -12,11 +12,7 @@ import Env from "./interfaces/envVars";
 import { WebSocketHandler } from "./lib/wsHandler";
 
 const handleBanner = (request: Request, env: Env): Response => {
-    const webSocketSchema = env.DEBUG ?
-        `ws://` : 'wss://'
-    const httpSchema = env.DEBUG ?
-        `http://` : 'https://'
-    const webSocketEndPoint = `${webSocketSchema}${env.HOSER_ENDPOINT}`;
+    const webSocketEndPoint = `wss://${env.HOSER_ENDPOINT}`;
 
     return new Response(`
         _   _              __        __    _       _               
