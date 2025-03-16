@@ -99,6 +99,8 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         }
 
         try {
+            const startTime = performance.now();
+
             const rawData = typeof fireHoseevent.data === 'string'
                 ? new TextEncoder().encode(fireHoseevent.data) 
                 : new Uint8Array(fireHoseevent.data);
@@ -109,6 +111,9 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
                 await serverWebSocket.send(JSON.stringify(parsedEvent));
                 messageCount++;
             }
+
+            const endTime = performance.now();
+            console.debug(`Event processing took ${endTime - startTime}ms`);
         } catch (err) {
             console.error('Error processing event:', err);
         }
