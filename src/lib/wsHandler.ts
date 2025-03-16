@@ -18,12 +18,13 @@ export class WebSocketHandler {
 
     public handle(request: Request): Response {
         const url = new URL(request.url);
+        console.debug('[ WS ] Request URL:', url.pathname);
         const handler = this.routes.get(url.pathname);
 
         if (handler && request.headers.get('Upgrade') === 'websocket') {
             // Create a new WebSocket pair
             const pair = new WebSocketPair();
-            
+            console.debug('[ WS ] Handler found, executing...');
             // Pass the request object to the handler to access headers
             handler(this.env, pair[1], request);
             

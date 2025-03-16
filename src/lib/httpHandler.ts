@@ -18,9 +18,11 @@ export class HttpHandler {
 
     public handle(request: Request): Promise<Response> {
         const url = new URL(request.url);
-
+        console.debug('[ HTTP ] Request URL:', url.pathname);
         const handler = this.routes.get(url.pathname);
-        if (handler) {
+        
+        if (handler && request.headers.get('Upgrade') !== 'websocket') {
+            console.debug('[ HTTP ] Handler found, executing...');
             return Promise.resolve(handler(request, this.env));
         }
 

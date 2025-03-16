@@ -7,7 +7,8 @@ import { AtProtoCommitEventBody } from './interfaces/atprotoEvents'
 import { CarReader } from '@ipld/car/reader'
 import { decode as ipldCborDecode } from '@ipld/dag-cbor'
 import { AtpAgent } from '@atproto/api'
-
+import { PostEventDataModel } from './interfaces/eventDataModel'
+import { HoseDataPost } from './interfaces/hoseData'
 // ====== Public declarations ======
 const agent = new AtpAgent({
   service: 'https://bsky.social'
@@ -83,8 +84,6 @@ interface AtProtoEventHeader {
 
 async function parseAtProtoEvent(event: Uint8Array) {
 
-  console.log('Decoding event:', event);
-
   const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, unknown]; // The type of the body is unknown until we read the event header
 
   /**
@@ -95,8 +94,6 @@ async function parseAtProtoEvent(event: Uint8Array) {
    *                                 message, in short form. Does not include the full Lexicon identifier, 
    *                                 just a fragment. Eg: #commit. Should not be included in header if op is -1.
    */
-  console.log('RAW Decoded header:', header);
-  console.log('RAW Decoded body:', body);
   if (header.op === 1 && header.t) {
     if (header.t === COMMIT_EVENT_TYPE) {
       const event = body as AtProtoCommitEventBody;
@@ -120,42 +117,41 @@ async function parseAtProtoEvent(event: Uint8Array) {
       * Also you need to know about the CIDs because it relates to the blocks:
       * - https://github.com/multiformats/cid
       */
-      console.log('Decoding blocks');
+       ('Decoding blocks');
       // First of all we need to check for the CID if it does exists
       if (!event.ops[0].cid) {
-        console.log('Missing CID, path or action');
+         ('Missing CID, path or action');
         return null;
       }
       const cid = event.ops[0].cid;
       const cr = await CarReader.fromBytes(event.blocks);
       if (!cr) {
-        console.log('Error decoding the CAR');
+         ('Error decoding the CAR');
         return null;
       }
 
       // Log operation for getting the block from the CID
-      console.log('Getting block from CID');
+       ('Getting block from CID');
       // Get the block from the CID
       const block = await cr.get(cid as any);
       if (!block) {
-        console.log('Error getting the block');
+         ('Error getting the block');
         return null;
       }
 
       // Log operation for decoding the block
-      console.log('Decoding the block');
+       ('Decoding the block');
       // Decode the block
-      const decodedBlock = ipldCborDecode(block.bytes) as { $type: string; }; // inline just to extract the $type
+      const decodedBlock = ipldCborDecode(block.bytes); // inline just to extract the $type
+      const blockType = decodedBlock as { $type: string; };
       // Log operation for successful decoding
-      console.log('Block decoded successfully ', decodedBlock);
       /**
        * Now we finished dealing with sync events and started dealing with
        * Data models, each event has a $type maybe a like, reply, post, etc.
        * 
        * We need to check for the $type and then parse the event accordingly
        */
-      const $type = decodedBlock.$type;
-      console.log('Decoded block $type:', $type);
+      const $type = blockType.$type;
       switch ($type) {
         case BSKY_POST:
           /**
@@ -196,25 +192,42 @@ async function parseAtProtoEvent(event: Uint8Array) {
           * 
           * 
           */
-          return event;
-          // const query = {
-          //   repo: event.repo,
-          //   rkey: event.rev
-          // }
-          // console.log('Querying post', query);
-          // console.log('Decoded post', decodedBlock);
-          // const post = await agent.getPost(query);
-          // console.log('Post:', post);
-          // return post;
+          const postModel = decodedBlock as PostEventDataModel;
+          console.log('Post model:', postModel);
+          const hoseData: HoseDataPost = {
+            text: postModel.text,
+            createdAt: postModel.createdAt,
+            reply: postModel.reply ? {
+              parent: {
+                uri: postModel.reply.parent.uri
+              }
+            } : undefined,
+            tags: postModel.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#tag'))
+              .map(f => f.features.find(feat => feat.tag)?.tag) as string[],
+            mentions: postModel.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#mention'))
+              .map(f => f.features.find(feat => feat.did)?.did) as string[]
+          };
+          console.log('Hose data:', hoseData);
+          if (hoseData.text === "") {
+            return {};
+          }
+          return hoseData;
+        // const query = {
+        //   repo: event.repo,
+        //   rkey: event.rev
+        // }
+        //  ('Querying post', query);
+        //  ('Decoded post', decodedBlock);
+        // const post = await agent.getPost(query);
+        //  ('Post:', post);
+        // return post;
         default:
-          console.log('Not supported event type', $type);
           return null;
       }
 
     }
   } else if (header.op === -1) {
     // I might not ignore this, by for sake of simplicity I will ignore it
-    console.log('Decoded error header:', header);
   } else {
     /* ignore unknown op or t values
     * as stated in the spec:

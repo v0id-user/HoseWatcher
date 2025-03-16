@@ -15,7 +15,6 @@ describe('General tests', () => {
         }
         
         try {
-            console.log('Querying post', query);
             const post = await agent.getPost(query);
             console.log('Post:', post);
             console.log('Resolving handle', query.repo);

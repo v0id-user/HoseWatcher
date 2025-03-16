@@ -96,7 +96,7 @@ function validateResolutionResponse(data: unknown): asserts data is DIDResolutio
  * ```typescript
  * try {
  *   const didDoc = await didResolve('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
- *   console.log(didDoc.alsoKnownAs); // ['at://user.bsky.social']
+ *    (didDoc.alsoKnownAs); // ['at://user.bsky.social']
  * } catch (err) {
  *   if (err instanceof DIDResolutionError) {
  *     console.error('Failed to resolve DID:', err.message);
