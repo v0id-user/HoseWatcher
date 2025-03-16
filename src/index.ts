@@ -43,7 +43,7 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
     }
 
     // TODO: Make this configurable
-    const maxMessages = 15; 
+    const maxMessages = 25; 
     let messageCount = 0;
     let lastResetTime = Date.now();
 
