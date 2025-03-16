@@ -21,11 +21,39 @@ export class HttpHandler {
         console.debug('[ HTTP ] Request URL:', url.pathname);
         const handler = this.routes.get(url.pathname);
         
+        // Handle CORS preflight requests
+        if (request.method === 'OPTIONS') {
+            return Promise.resolve(new Response(null, {
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                }
+            }));
+        }
+        
         if (handler && request.headers.get('Upgrade') !== 'websocket') {
             console.debug('[ HTTP ] Handler found, executing...');
-            return Promise.resolve(handler(request, this.env));
+            const response = handler(request, this.env);
+            
+            // Add CORS headers to the actual response
+            return Promise.resolve(response).then(originalResponse => {
+                const corsHeaders = new Headers(originalResponse.headers);
+                corsHeaders.set('Access-Control-Allow-Origin', '*');
+                
+                return new Response(originalResponse.body, {
+                    status: originalResponse.status,
+                    statusText: originalResponse.statusText,
+                    headers: corsHeaders
+                });
+            });
         }
 
-        return Promise.resolve(new Response('Not found', { status: 404 }));
+        return Promise.resolve(new Response('Not found', { 
+            status: 404,
+            headers: {
+                'Access-Control-Allow-Origin': '*'
+            }
+        }));
     }
 }
