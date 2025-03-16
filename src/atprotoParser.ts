@@ -212,8 +212,9 @@ async function parseAtProtoEvent(event: Uint8Array) {
   * 
   */
   const postModel = decodedBlock as PostEventDataModel;
-  console.log('Post model:', postModel);
+  // console.log('Post model:', postModel);
 
+  // TODO: Include DID and RKEY in the response
   const hoseData: HoseDataPost = {
     text: postModel.text,
     createdAt: postModel.createdAt,
@@ -228,7 +229,7 @@ async function parseAtProtoEvent(event: Uint8Array) {
       .map(f => f.features.find(feat => feat.did)?.did) as string[]
   };
 
-  console.log('Hose data:', hoseData);
+  // console.log('Hose data:', hoseData);
 
   if (hoseData.text === "") {
     return {};
