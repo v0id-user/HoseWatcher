@@ -1,5 +1,7 @@
 interface HoseDataPost {
     text: string;
+    did: string;
+    rev: string;
     createdAt: string;
     reply?: {
         parent: {

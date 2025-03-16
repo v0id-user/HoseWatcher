@@ -213,9 +213,10 @@ async function parseAtProtoEvent(event: Uint8Array) {
     */
     const postModel = decodedBlock as PostEventDataModel;
 
-    // TODO: Include DID and RKEY in the response
     const hoseData: HoseDataPost = {
       text: postModel.text || '',
+      did: hoseEvent.repo,
+      rev: hoseEvent.rev,
       createdAt: postModel.createdAt,
       reply: postModel.reply ? {
         parent: {
