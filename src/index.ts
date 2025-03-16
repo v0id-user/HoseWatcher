@@ -72,14 +72,19 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
 
         const start = performance.now();
         let rawData = typeof fireHoseevent.data === 'string'
-            ? new TextEncoder().encode(fireHoseevent.data).buffer
-            : fireHoseevent.data;
+        ? new TextEncoder().encode(fireHoseevent.data).buffer
+        : fireHoseevent.data;
+        
         const parsedEvent = await parseAtProtoEvent(new Uint8Array(rawData));
-        const end = performance.now();
-        console.log(`Parsing took ${end - start}ms`);
+        
         if (parsedEvent && serverWebSocket.readyState === WebSocket.OPEN) {
-            await serverWebSocket.send(JSON.stringify(parsedEvent));
+          const jsonString = JSON.stringify(parsedEvent);
+          console.log(`JSON string length: ${jsonString.length} bytes`);
+          await serverWebSocket.send(jsonString);
         }
+        
+        const end = performance.now();
+        console.log(`Total handler time: ${end - start}ms`);
     });
 
     firehoseWebSocket.addEventListener('error', (error) => {
