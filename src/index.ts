@@ -82,7 +82,7 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
 
         const currentTime = Date.now();
         // TODO: Make this configurable
-        if (currentTime - lastResetTime >= 2000) {
+        if (currentTime - lastResetTime >= 10000) {
             messageCount = 0;
             lastResetTime = currentTime;
         }
