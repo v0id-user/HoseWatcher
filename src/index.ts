@@ -41,6 +41,12 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
         serverWebSocket.close();
         return;
     }
+
+  
+    const maxMessagesPerSecond = 60; 
+    let messageCount = 0;
+    let lastResetTime = Date.now();
+
     // Create firehose connection
     const firehoseWebSocket = new WebSocket('wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos');
 
@@ -73,17 +79,27 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
             return;
         }
 
+        const currentTime = Date.now();
+        if (currentTime - lastResetTime >= 1000) {
+            // Reset counter every second
+            messageCount = 0;
+            lastResetTime = currentTime;
+        }
+
+        if (messageCount >= maxMessagesPerSecond) {
+            return;
+        }
+
         try {
-            // Avoid creating encoder on every message
             const rawData = typeof fireHoseevent.data === 'string'
                 ? new TextEncoder().encode(fireHoseevent.data) 
                 : new Uint8Array(fireHoseevent.data);
 
             const parsedEvent = await parseAtProtoEvent(rawData);
             
-            // Only process if we have data
             if (parsedEvent && Object.keys(parsedEvent).length > 0) {
                 await serverWebSocket.send(JSON.stringify(parsedEvent));
+                messageCount++;
             }
         } catch (err) {
             console.error('Error processing event:', err);
