@@ -6,14 +6,9 @@ import { BSKY_POST } from './constants/dataModelTypes'
 import { AtProtoCommitEventBody } from './interfaces/atprotoEvents'
 import { CarReader } from '@ipld/car/reader'
 import { decode as ipldCborDecode } from '@ipld/dag-cbor'
-import { AtpAgent } from '@atproto/api'
 import { PostEventDataModel } from './interfaces/eventDataModel'
 import { HoseDataPost } from './interfaces/hoseData'
 
-// ====== Public declarations ======
-const agent = new AtpAgent({
-  service: 'https://bsky.social'
-})
 // TODO: use await agent.getPost(params)
 
 /* I copied the same decoder from the implementation of the Atproto decoder @atproto/common
