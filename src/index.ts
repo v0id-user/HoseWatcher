@@ -46,7 +46,7 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
 
     // Set up event listeners for the firehose WebSocket
     firehoseWebSocket.addEventListener('open', () => {
-         ('Connected to the firehose WebSocket');
+        ('Connected to the firehose WebSocket');
     });
 
     firehoseWebSocket.addEventListener('message', async (fireHoseevent) => {
@@ -70,21 +70,13 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
          * 
         */
 
-        
-
-        // Handle the message data correctly
-        let rawData;
-        if (typeof fireHoseevent.data === 'string') {
-            // Convert string to ArrayBuffer if needed
-            const encoder = new TextEncoder();
-            rawData = encoder.encode(fireHoseevent.data).buffer;
-        } else {
-            // Already an ArrayBuffer
-            rawData = fireHoseevent.data;
-        }
-
-        // Parse the event to the common schema
+        const start = performance.now();
+        let rawData = typeof fireHoseevent.data === 'string'
+            ? new TextEncoder().encode(fireHoseevent.data).buffer
+            : fireHoseevent.data;
         const parsedEvent = await parseAtProtoEvent(new Uint8Array(rawData));
+        const end = performance.now();
+        console.log(`Parsing took ${end - start}ms`);
         if (parsedEvent && serverWebSocket.readyState === WebSocket.OPEN) {
             await serverWebSocket.send(JSON.stringify(parsedEvent));
         }
@@ -97,12 +89,12 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
     });
 
     firehoseWebSocket.addEventListener('close', () => {
-         ('Disconnected from the firehose WebSocket');
+        ('Disconnected from the firehose WebSocket');
         serverWebSocket.close();
     });
 
     serverWebSocket.addEventListener('close', () => {
-         ('Disconnected from the server WebSocket');
+        ('Disconnected from the server WebSocket');
         firehoseWebSocket.close();
         serverWebSocket.close();
     });
