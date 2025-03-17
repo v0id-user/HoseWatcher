@@ -103,7 +103,7 @@ function decodeEvent(event: Uint8Array): [AtProtoEventHeader, unknown] | null {
       console.warn(`Invalid decoded data: expected array with at least 2 elements, got ${decoded?.length || 0} elements`);
       return null;
     }
-    
+
     // Validate header structure
     const header = decoded[0] as AtProtoEventHeader;
     if (!header || typeof header !== 'object') {
@@ -124,7 +124,7 @@ function decodeEvent(event: Uint8Array): [AtProtoEventHeader, unknown] | null {
  */
 function validateHeader(header: AtProtoEventHeader | null): boolean {
   if (!header) return false;
-  
+
   // Handle error messages
   if (header.op === -1) {
     return false;
@@ -178,9 +178,9 @@ function validateCommitEvent(hoseEvent: AtProtoCommitEventBody): boolean {
  */
 function extractTags(facets: any[] | undefined): string[] {
   if (!facets || !Array.isArray(facets)) return [];
-  
+
   return facets
-    .filter(f => f && f.features && Array.isArray(f.features) && 
+    .filter(f => f && f.features && Array.isArray(f.features) &&
       f.features.some((feat: { $type?: string }) => feat && feat.$type === 'app.bsky.richtext.facet#tag'))
     .map(f => {
       const tagFeature = f.features?.find((feat: { $type?: string; tag?: string }) => feat && feat.tag);
@@ -194,9 +194,9 @@ function extractTags(facets: any[] | undefined): string[] {
  */
 function extractMentions(facets: any[] | undefined): string[] {
   if (!facets || !Array.isArray(facets)) return [];
-  
+
   return facets
-    .filter(f => f && f.features && Array.isArray(f.features) && 
+    .filter(f => f && f.features && Array.isArray(f.features) &&
       f.features.some((feat: { $type?: string }) => feat && feat.$type === 'app.bsky.richtext.facet#mention'))
     .map(f => {
       const mentionFeature = f.features?.find((feat: { $type?: string; did?: string }) => feat && feat.did);
@@ -222,7 +222,7 @@ async function processCarBlock(hoseEvent: AtProtoCommitEventBody): Promise<PostE
     * Also you need to know about the CIDs because it relates to the blocks:
     * - https://github.com/multiformats/cid
     */
-    
+
     // Safety check for blocks
     if (!hoseEvent.blocks || !(hoseEvent.blocks instanceof Uint8Array)) {
       return null;
@@ -237,7 +237,7 @@ async function processCarBlock(hoseEvent: AtProtoCommitEventBody): Promise<PostE
     // Get block from CID
     const cid = hoseEvent.ops[0]?.cid;
     if (!cid) return null;
-    
+
     const block = await cr.get(cid as any);
     if (!block) {
       return null;
@@ -275,20 +275,16 @@ async function parseAtProtoEvent(event: Uint8Array) {
       return {};
     }
 
-    // Step 1: Decode the event
     const decodedData = decodeEvent(event);
     if (!decodedData) return {};
-    
+
     const [header, body] = decodedData;
 
-    // Step 2: Validate header
     if (!validateHeader(header)) return {};
 
-    // Step 3: Validate commit event
     const hoseEvent = body as AtProtoCommitEventBody;
     if (!validateCommitEvent(hoseEvent)) return {};
 
-    // Step 4: Process CAR block
     const postModel = await processCarBlock(hoseEvent);
     if (!postModel) return {};
 
@@ -317,20 +313,20 @@ async function parseAtProtoEvent(event: Uint8Array) {
      * 
      * I will use the https://plc.directory/{did} API to do the resolution.
      * 
-     */
-
-    /*
-    * ! Change: 
-    * We will return a parsed raw sync event the client is responsible for extracting the data
-    * or any other details needed, the reason is that if we do it here we will need to make multiple
-    * requests to other services to get the data, and it will increase the complexity of the code and latency.
-    * 
-    * Also we will face rate limiting issues, so it's better to let the client handle the data.
-    * and we provide wrapper endpoints to other needed data.
-    * 
+     * 
+     * +===============================================================================================================================================+
+     * 
+     * 
+     * ! Change: 
+     * We will return a parsed raw sync event the client is responsible for extracting the data
+     * or any other details needed, the reason is that if we do it here we will need to make multiple
+     * requests to other services to get the data, and it will increase the complexity of the code and latency.
+     * 
+     * Also we will face rate limiting issues, so it's better to let the client handle the data.
+     * and we provide wrapper endpoints to other needed data.
+     * 
     */
 
-    // Step 5: Extract post data
     try {
       const hoseData: HoseDataPost = {
         text: postModel.text || '',
