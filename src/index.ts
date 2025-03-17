@@ -92,8 +92,16 @@ const handleWsFirehoseRelay = async (env: Env, serverWebSocket: WebSocket, reque
     });
 
     firehoseWebSocket.addEventListener('error', (error) => {
-        console.error('Firehose WebSocket error:', error);
-        serverWebSocket.send('Error connecting to the firehose');
+        const errorDetails = {
+            message: error.message || 'No error message available',
+            type: error.type,
+            timeStamp: error.timeStamp,
+            isTrusted: error.isTrusted,
+            ...(error.error && { errorObject: String(error.error) })
+        };
+        
+        console.error('Firehose WebSocket error:', JSON.stringify(errorDetails, null, 2));
+        serverWebSocket.send(`Error connecting to the firehose: ${errorDetails.message}`);
         serverWebSocket.close();
     });
 
