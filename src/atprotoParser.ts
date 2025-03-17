@@ -9,10 +9,9 @@ import { decode as ipldCborDecode } from '@ipld/dag-cbor'
 import { PostEventDataModel } from './interfaces/eventDataModel'
 import { HoseDataPost } from './interfaces/hoseData'
 
-// TODO: use await agent.getPost(params)
 
 /* I copied the same decoder from the implementation of the Atproto decoder @atproto/common
-* found in https://github.dev/bluesky-social/atproto/blob/main/packages/common/src/index.ts
+* found in https://github.com/bluesky-social/atproto/blob/main/packages/common/src/ipld-multi.ts
 * I tried to use the library @atproto/common but it was not working as expected with cloudflare workers
 * ==============@Atproto/common START==================
 */
@@ -160,7 +159,7 @@ function validateCommitEvent(hoseEvent: AtProtoCommitEventBody): boolean {
     return false;
   }
 
-  // Skip too big or deleted events
+  // Skip too big or  events
   if (hoseEvent.tooBig || hoseEvent.ops[0].action === 'delete') {
     return false;
   }
@@ -256,6 +255,8 @@ async function processCarBlock(hoseEvent: AtProtoCommitEventBody): Promise<PostE
      * Data models, each event has a $type maybe a like, reply, post, etc.
      * 
      * We need to check for the $type and then parse the event accordingly
+     * 
+     * for this implementation I will only parse posts
      */
     if (!blockType.$type || blockType.$type !== BSKY_POST) {
       return null;
