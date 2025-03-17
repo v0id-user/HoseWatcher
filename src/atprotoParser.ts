@@ -41,11 +41,20 @@ const decoder = new cborx.Decoder({
 })
 
 export const cborDecodeMulti = (encoded: Uint8Array): unknown[] => {
-  const decoded: unknown[] = []
-  decoder.decodeMultiple(encoded, (value) => {
-    decoded.push(value)
-  })
-  return decoded
+  if (!encoded || !(encoded instanceof Uint8Array) || encoded.length === 0) {
+    return [];
+  }
+
+  try {
+    const decoded: unknown[] = []
+    decoder.decodeMultiple(encoded, (value) => {
+      decoded.push(value)
+    })
+    return decoded
+  } catch (error) {
+    console.error('CBOR decode error:', error);
+    return [];
+  }
 }
 
 /*
@@ -83,11 +92,25 @@ interface AtProtoEventHeader {
  * Returns null if parsing fails
  */
 function decodeEvent(event: Uint8Array): [AtProtoEventHeader, unknown] | null {
+  if (!event || !(event instanceof Uint8Array) || event.length === 0) {
+    console.warn('Invalid event data received: empty or not Uint8Array');
+    return null;
+  }
+
   try {
     const decoded = cborDecodeMulti(event);
     if (!Array.isArray(decoded) || decoded.length < 2) {
+      console.warn(`Invalid decoded data: expected array with at least 2 elements, got ${decoded?.length || 0} elements`);
       return null;
     }
+    
+    // Validate header structure
+    const header = decoded[0] as AtProtoEventHeader;
+    if (!header || typeof header !== 'object') {
+      console.warn('Invalid header: not an object');
+      return null;
+    }
+
     return decoded as [AtProtoEventHeader, unknown];
   } catch (error) {
     console.error('Error decoding CBOR data:', error);
@@ -247,22 +270,27 @@ async function processCarBlock(hoseEvent: AtProtoCommitEventBody): Promise<PostE
 
 async function parseAtProtoEvent(event: Uint8Array) {
   try {
+    if (!event || !(event instanceof Uint8Array)) {
+      console.warn('Invalid event: not a Uint8Array');
+      return {};
+    }
+
     // Step 1: Decode the event
     const decodedData = decodeEvent(event);
-    if (!decodedData) return null;
+    if (!decodedData) return {};
     
     const [header, body] = decodedData;
 
     // Step 2: Validate header
-    if (!validateHeader(header)) return null;
+    if (!validateHeader(header)) return {};
 
     // Step 3: Validate commit event
     const hoseEvent = body as AtProtoCommitEventBody;
-    if (!validateCommitEvent(hoseEvent)) return null;
+    if (!validateCommitEvent(hoseEvent)) return {};
 
     // Step 4: Process CAR block
     const postModel = await processCarBlock(hoseEvent);
-    if (!postModel) return null;
+    if (!postModel) return {};
 
     /**
      * For posts we want to get the author and more data so we will use @atproto/api
@@ -303,29 +331,34 @@ async function parseAtProtoEvent(event: Uint8Array) {
     */
 
     // Step 5: Extract post data
-    const hoseData: HoseDataPost = {
-      text: postModel.text || '',
-      did: hoseEvent.repo,
-      rev: hoseEvent.rev,
-      createdAt: postModel.createdAt,
-      reply: postModel.reply ? {
-        parent: {
-          uri: postModel.reply.parent?.uri || ''
-        }
-      } : undefined,
-      tags: extractTags(postModel.facets),
-      mentions: extractMentions(postModel.facets)
-    };
+    try {
+      const hoseData: HoseDataPost = {
+        text: postModel.text || '',
+        did: hoseEvent.repo || '',
+        rev: hoseEvent.rev || '',
+        createdAt: postModel.createdAt || '',
+        reply: postModel.reply && postModel.reply.parent ? {
+          parent: {
+            uri: postModel.reply.parent.uri || ''
+          }
+        } : undefined,
+        tags: extractTags(postModel.facets),
+        mentions: extractMentions(postModel.facets)
+      };
 
-    if (!hoseData.text) {
+      if (!hoseData.text) {
+        return {};
+      }
+
+      return hoseData;
+    } catch (err) {
+      console.error('Error extracting post data:', err);
       return {};
     }
 
-    return hoseData;
-
   } catch (error) {
     console.error('Error processing event:', error);
-    return {};
+    return {};  // Return empty object for consistency
   }
 }
 
