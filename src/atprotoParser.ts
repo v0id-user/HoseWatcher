@@ -78,54 +78,115 @@ interface AtProtoEventHeader {
   t?: "#commit" | "#account"; // Type of the event
 }
 
-async function parseAtProtoEvent(event: Uint8Array) {
+/**
+ * Parses CBOR data into header and body
+ * Returns null if parsing fails
+ */
+function decodeEvent(event: Uint8Array): [AtProtoEventHeader, unknown] | null {
   try {
-    const [header, body] = cborDecodeMulti(event) as [AtProtoEventHeader, unknown];
-
-    /**
-     * `op` ("operation", integer, required): fixed values, indicating what this frame contains
-     * 1: a regular message, with type indicated by `t`
-     * -1: an error message
-     * `t` ("type", string, optional): required if `op` is 1, indicating the Lexicon sub-type for this 
-     *                                 message, in short form. Does not include the full Lexicon identifier, 
-     *                                 just a fragment. Eg: #commit. Should not be included in header if op is -1.
-     */
-
-    // Handle error messages
-    if (header.op === -1) {
-      // I might not ignore this, by for sake of simplicity I will ignore it
+    const decoded = cborDecodeMulti(event);
+    if (!Array.isArray(decoded) || decoded.length < 2) {
       return null;
     }
+    return decoded as [AtProtoEventHeader, unknown];
+  } catch (error) {
+    console.error('Error decoding CBOR data:', error);
+    return null;
+  }
+}
 
-    // Handle unknown op/t values
-    if (!header.op || !header.t) {
-      /* ignore unknown op or t values
-      * as stated in the spec:
-      * Clients should ignore frames with headers that have unknown op or t values. 
-      * Unknown fields in both headers and payloads should be ignored. Invalid framing or invalid DAG-CBOR 
-      * encoding are hard errors, and the client should drop the entire connection instead of skipping the frame. 
-      * Servers should ignore any frames received from the client, not treat them as errors.
-      */
-      return null;
-    }
+/**
+ * Validates event header
+ * Returns false if invalid
+ */
+function validateHeader(header: AtProtoEventHeader | null): boolean {
+  if (!header) return false;
+  
+  // Handle error messages
+  if (header.op === -1) {
+    return false;
+  }
 
-    // Handle non-commit events
-    if (header.t !== COMMIT_EVENT_TYPE) {
-      return null;
-    }
+  // Handle unknown op/t values
+  if (!header.op || !header.t) {
+    /* ignore unknown op or t values
+    * as stated in the spec:
+    * Clients should ignore frames with headers that have unknown op or t values. 
+    * Unknown fields in both headers and payloads should be ignored. Invalid framing or invalid DAG-CBOR 
+    * encoding are hard errors, and the client should drop the entire connection instead of skipping the frame. 
+    * Servers should ignore any frames received from the client, not treat them as errors.
+    */
+    return false;
+  }
 
-    const hoseEvent = body as AtProtoCommitEventBody;
+  // Handle non-commit events
+  if (header.t !== COMMIT_EVENT_TYPE) {
+    return false;
+  }
 
-    // Validate ops array exists and has elements
-    if (!hoseEvent.ops || !Array.isArray(hoseEvent.ops) || !hoseEvent.ops[0]) {
-      return null;
-    }
+  return true;
+}
 
-    // Skip too big or deleted events
-    if (hoseEvent.tooBig || hoseEvent.ops[0].action === 'delete') {
-      return null;
-    }
+/**
+ * Validates commit event body
+ * Returns null if invalid
+ */
+function validateCommitEvent(hoseEvent: AtProtoCommitEventBody): boolean {
+  // Validate ops array exists and has elements
+  if (!hoseEvent || !hoseEvent.ops || !Array.isArray(hoseEvent.ops) || !hoseEvent.ops[0]) {
+    return false;
+  }
 
+  // Skip too big or deleted events
+  if (hoseEvent.tooBig || hoseEvent.ops[0].action === 'delete') {
+    return false;
+  }
+
+  // Validate CID exists
+  if (!hoseEvent.ops[0].cid) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Extracts tags from facets
+ */
+function extractTags(facets: any[] | undefined): string[] {
+  if (!facets || !Array.isArray(facets)) return [];
+  
+  return facets
+    .filter(f => f && f.features && Array.isArray(f.features) && 
+      f.features.some((feat: { $type?: string }) => feat && feat.$type === 'app.bsky.richtext.facet#tag'))
+    .map(f => {
+      const tagFeature = f.features?.find((feat: { $type?: string; tag?: string }) => feat && feat.tag);
+      return tagFeature && tagFeature.tag ? tagFeature.tag : null;
+    })
+    .filter(Boolean) as string[];
+}
+
+/**
+ * Extracts mentions from facets
+ */
+function extractMentions(facets: any[] | undefined): string[] {
+  if (!facets || !Array.isArray(facets)) return [];
+  
+  return facets
+    .filter(f => f && f.features && Array.isArray(f.features) && 
+      f.features.some((feat: { $type?: string }) => feat && feat.$type === 'app.bsky.richtext.facet#mention'))
+    .map(f => {
+      const mentionFeature = f.features?.find((feat: { $type?: string; did?: string }) => feat && feat.did);
+      return mentionFeature && mentionFeature.did ? mentionFeature.did : null;
+    })
+    .filter(Boolean) as string[];
+}
+
+/**
+ * Processes CAR block to extract post data
+ */
+async function processCarBlock(hoseEvent: AtProtoCommitEventBody): Promise<PostEventDataModel | null> {
+  try {
     /* 
     * Decoding the blocks taken from https://github.com/kcchu/atproto-firehose/blob/main/src/subscribeRepos.ts#L64
     * and the specs in https://atproto.com/specs/sync
@@ -138,9 +199,9 @@ async function parseAtProtoEvent(event: Uint8Array) {
     * Also you need to know about the CIDs because it relates to the blocks:
     * - https://github.com/multiformats/cid
     */
-
-    // Validate CID exists
-    if (!hoseEvent.ops[0].cid) {
+    
+    // Safety check for blocks
+    if (!hoseEvent.blocks || !(hoseEvent.blocks instanceof Uint8Array)) {
       return null;
     }
 
@@ -151,7 +212,10 @@ async function parseAtProtoEvent(event: Uint8Array) {
     }
 
     // Get block from CID
-    const block = await cr.get(hoseEvent.ops[0].cid as any);
+    const cid = hoseEvent.ops[0]?.cid;
+    if (!cid) return null;
+    
+    const block = await cr.get(cid as any);
     if (!block) {
       return null;
     }
@@ -162,7 +226,7 @@ async function parseAtProtoEvent(event: Uint8Array) {
       return null;
     }
 
-    const blockType = decodedBlock as { $type: string; };
+    const blockType = decodedBlock as { $type?: string };
 
     /**
      * Now we finished dealing with sync events and started dealing with
@@ -170,9 +234,35 @@ async function parseAtProtoEvent(event: Uint8Array) {
      * 
      * We need to check for the $type and then parse the event accordingly
      */
-    if (blockType.$type !== BSKY_POST) {
+    if (!blockType.$type || blockType.$type !== BSKY_POST) {
       return null;
     }
+
+    return decodedBlock as PostEventDataModel;
+  } catch (error) {
+    console.error('Error processing CAR block:', error);
+    return null;
+  }
+}
+
+async function parseAtProtoEvent(event: Uint8Array) {
+  try {
+    // Step 1: Decode the event
+    const decodedData = decodeEvent(event);
+    if (!decodedData) return null;
+    
+    const [header, body] = decodedData;
+
+    // Step 2: Validate header
+    if (!validateHeader(header)) return null;
+
+    // Step 3: Validate commit event
+    const hoseEvent = body as AtProtoCommitEventBody;
+    if (!validateCommitEvent(hoseEvent)) return null;
+
+    // Step 4: Process CAR block
+    const postModel = await processCarBlock(hoseEvent);
+    if (!postModel) return null;
 
     /**
      * For posts we want to get the author and more data so we will use @atproto/api
@@ -211,8 +301,8 @@ async function parseAtProtoEvent(event: Uint8Array) {
     * and we provide wrapper endpoints to other needed data.
     * 
     */
-    const postModel = decodedBlock as PostEventDataModel;
 
+    // Step 5: Extract post data
     const hoseData: HoseDataPost = {
       text: postModel.text || '',
       did: hoseEvent.repo,
@@ -220,13 +310,11 @@ async function parseAtProtoEvent(event: Uint8Array) {
       createdAt: postModel.createdAt,
       reply: postModel.reply ? {
         parent: {
-          uri: postModel.reply.parent.uri
+          uri: postModel.reply.parent?.uri || ''
         }
       } : undefined,
-      tags: postModel.facets?.filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#tag'))
-        .map(f => f.features?.find(feat => feat.tag)?.tag).filter(Boolean) as string[],
-      mentions: postModel.facets?.filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#mention'))
-        .map(f => f.features?.find(feat => feat.did)?.did).filter(Boolean) as string[]
+      tags: extractTags(postModel.facets),
+      mentions: extractMentions(postModel.facets)
     };
 
     if (!hoseData.text) {
@@ -237,7 +325,7 @@ async function parseAtProtoEvent(event: Uint8Array) {
 
   } catch (error) {
     console.error('Error processing event:', error);
-    return null;
+    return {};
   }
 }
 
