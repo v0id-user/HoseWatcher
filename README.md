@@ -2,7 +2,11 @@
 # HoseWatcher
 
 A real-time Bluesky firehose relay built on Cloudflare Workers. This service connects to the Bluesky firehose, processes the AtProto events, and relays them to clients via WebSockets.
+<div align="center">
 
+[![MADE BY #V0ID](https://img.shields.io/badge/MADE%20BY%20%23V0ID-F3EEE1.svg?style=for-the-badge)](https://github.com/v0id-user)
+
+</div>
 ## 🚰 What is HoseWatcher?
 
 HoseWatcher is a relay server that streams real-time data from the Bluesky firehose to connected clients. The Bluesky firehose provides a continuous stream of all activities happening on the Bluesky social network (posts, likes, follows, etc.).
